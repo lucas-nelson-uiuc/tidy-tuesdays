@@ -1,5 +1,5 @@
 ---
-title: "Tidy Tuesday (10/19/2021)"
+title: "Tidy Tuesday (2021/10/19)"
 output: pdf_document
 ---
 
