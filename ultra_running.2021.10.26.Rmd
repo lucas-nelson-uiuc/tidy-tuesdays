@@ -1,0 +1,133 @@
+---
+title: "Ultra Running: 2021/10/26"
+output:
+  pdf_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    fig_width: 7
+    fig_height: 6
+    fig_caption: true
+    highlight: tango
+fontsize: 11pt
+---
+
+\newpage
+
+---
+
+# Loading in the Data
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(tidytuesdayR)
+library(lubridate)
+
+f.ultra = paste0(
+  'https://raw.githubusercontent.com/rfordatascience/tidytuesday',
+  '/master/data/2021/2021-10-26/ultra_rankings.csv'
+)
+ultra_rankings = readr::read_csv(f.ultra)
+
+f.race = paste0(
+  'https://raw.githubusercontent.com/rfordatascience/tidytuesday',
+  '/master/data/2021/2021-10-26/race.csv'
+)
+race = readr::read_csv(f.race)
+
+full_set = ultra_rankings %>%
+  inner_join(race)
+```
+
+# Data Manipulation and Wrangling
+
+```{r}
+ultra_rankings = ultra_rankings %>%
+  mutate(race_year_id = as.factor(race_year_id))
+
+top_150_races = ultra_rankings %>%
+  group_by(race_year_id) %>%
+  summarise(n = n()) %>%
+  filter(n >= 1633)
+```
+
+# Analysis I: Influence of Age Group on Race Performance by Gender
+
+```{r}
+hist(ultra_rankings$age)
+
+ultra_rankings %>%
+  mutate(age_group = ifelse(age >= 30 & age < 40, '30 - 39',
+                      ifelse(age >= 40 & age < 50, '40 - 49',
+                      ifelse(age >= 50 & age < 60, '50 - 59',
+                      ifelse(age >= 60, '60+', 'undefined'))))) %>%
+  select(-c(runner, time, nationality, age)) %>%
+  filter(age_group != 'undefined') %>%
+  filter(race_year_id %in% top_150_races$race_year_id) %>%
+  filter(gender %in% c('M', 'W')) %>%
+  ggplot() +
+    geom_point(aes(x=time_in_seconds, y=rank, colour=gender, shape=gender)) +
+    facet_grid(race_year_id ~ age_group)
+```
+
+```{r}
+ultra_rankings %>%
+  mutate(age_group = ifelse(age >= 30 & age < 40, '30 - 39',
+                      ifelse(age >= 40 & age < 50, '40 - 49',
+                      ifelse(age >= 50 & age < 60, '50 - 59',
+                      ifelse(age >= 60, '60+', 'undefined'))))) %>%
+  select(-c(runner, time, nationality, age)) %>%
+  filter(time_in_seconds > quantile(time_in_seconds, 0.025, na.rm=TRUE),
+         time_in_seconds < quantile(time_in_seconds, 0.975, na.rm=TRUE)) %>%
+  filter(age_group != 'undefined') %>%
+  filter(race_year_id %in% top_150_races$race_year_id) %>%
+  filter(gender %in% c('M', 'W')) %>%
+  ggplot() +
+    geom_histogram(aes(x=time_in_seconds, fill=gender)) +
+    facet_grid(race_year_id ~ age_group)
+```
+
+# Participation Trend over Time
+
+```{r}
+race %>%
+  arrange(date) %>%
+  ggplot() +
+    geom_line(aes(x=date, y=cumsum(participants)))
+```
+
+One possibility is that less women are competing, hence explaining that the observed increase in womens performances could be due to the luck of a few speedy ladies. However, as we see over time, even though participation has increased, this proportion remains the same.
+
+```{r}
+full_set %>%
+  filter(gender %in% c('M', 'W')) %>%
+  group_by(race_year_id) %>%
+  summarise(prop_men = mean(gender == 'M'),
+            prop_women = mean(gender == 'W')) %>%
+  select(race_year_id, prop_men, prop_women) %>%
+  right_join(race) %>%
+  filter(participants > 0) %>%
+  select(-c(event, race, city, country, start_time, participation, elevation_gain, elevation_loss, aid_stations)) %>%
+  ggplot(aes(x=date)) +
+    geom_line(aes(y=cummean(prop_men), colour='men')) + 
+    geom_line(aes(y=cummean(prop_women), colour='women'))
+```
+
+Women have consistently outperformed their male counterparts in long-distance running, and the results become clearer as more women join year after year.
+
+```{r}
+full_set %>%
+  filter(gender %in% c('M', 'W') & distance > 150) %>%
+  group_by(distance, gender) %>%
+  summarise(mean_time = mean(time_in_seconds, na.rm=TRUE),
+            date = max(date)) %>%
+  mutate(gender_diff = (mean_time[gender == 'M'] - mean_time) %/% 3600,
+         year = substr(lubridate::ymd(date), 1, 4)) %>%
+  ggplot() + 
+    geom_line(aes(x=distance, y=0)) +
+    geom_point(aes(x=distance, y=gender_diff, alpha=gender, colour=gender, shape=gender)) +
+    facet_grid(year ~ .) +
+    xlab('Distance (km)') +
+    ylab('Finish Difference (hrs)')
+```
+
